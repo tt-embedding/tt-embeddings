@@ -180,7 +180,7 @@ def matrix_with_random_cores(shape, tt_rank=2, mean=0., stddev=1.,
         initializing TT-cores.
       stddev: a number, the standard deviation of the normal distribution used
         for initializing TT-cores.
-      dtype: [tf.float32] dtype of the resulting matrix.
+      dtype: [torch.float32] dtype of the resulting matrix.
       name: string, name of the Op.
     Returns:
       TensorTrain containing a TT-matrix of size
@@ -221,10 +221,7 @@ def random_matrix(shape, tt_rank=2, mean=0., stddev=1.,
     Entries of the generated matrix (in the full format) will be iid and satisfy
     E[x_{i1i2..id}] = mean, Var[x_{i1i2..id}] = stddev^2, but the distribution is
     in fact not Gaussian.
-    In the current implementation only mean 0 is supported. To get
-    a random_matrix with specified mean but tt_rank greater by 1 you can call
-    x = ttt.random_matrix(shape, tt_rank, stddev=stddev)
-    x = mean * t3f.ones_like(x) + x
+    In the current implementation only mean 0 is supported. 
     Args:
       shape: 2d array, shape[0] is the shape of the matrix row-index,
         shape[1] is the shape of the column index.
@@ -238,7 +235,7 @@ def random_matrix(shape, tt_rank=2, mean=0., stddev=1.,
       mean: a number, the desired mean for the distribution of entries.
       stddev: a number, the desired standard deviation for the distribution of
         entries.
-      dtype: [tf.float32] dtype of the resulting matrix.
+      dtype: [torch.float32] dtype of the resulting matrix.
       name: string, name of the Op.
     Returns:
       TensorTrain containing a TT-matrix of size
@@ -318,7 +315,7 @@ def matrix_batch_with_random_cores(shape, batch_size=1, tt_rank=2, mean=0., stdd
         initializing TT-cores.
       stddev: a number, the standard deviation of the normal distribution used
         for initializing TT-cores.
-      dtype: [tf.float32] dtype of the resulting matrix.
+      dtype: [torch.float32] dtype of the resulting matrix.
       name: string, name of the Op.
     Returns:
       TensorTrain containing a TT-matrix of size
@@ -359,10 +356,7 @@ def random_matrix_batch(shape, batch_size=1, tt_rank=2, mean=0., stddev=1.,
     Entries of the generated matrix (in the full format) will be iid and satisfy
     E[x_{i1i2..id}] = mean, Var[x_{i1i2..id}] = stddev^2, but the distribution is
     in fact not Gaussian.
-    In the current implementation only mean 0 is supported. To get
-    a random_matrix with specified mean but tt_rank greater by 1 you can call
-    x = ttt.random_matrix(shape, tt_rank, stddev=stddev)
-    x = mean * t3f.ones_like(x) + x
+    In the current implementation only mean 0 is supported. 
     Args:
       shape: 2d array, shape[0] is the shape of the matrix row-index,
         shape[1] is the shape of the column index.
@@ -376,7 +370,7 @@ def random_matrix_batch(shape, batch_size=1, tt_rank=2, mean=0., stddev=1.,
       mean: a number, the desired mean for the distribution of entries.
       stddev: a number, the desired standard deviation for the distribution of
         entries.
-      dtype: [tf.float32] dtype of the resulting matrix.
+      dtype: [torch.float32] dtype of the resulting matrix.
       name: string, name of the Op.
     Returns:
       TensorTrain containing a TT-matrix of size
