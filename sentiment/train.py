@@ -4,7 +4,11 @@ sys.path.insert(0, '..')
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--use_tt', type=bool, default=False)
+parser.add_argument(
+    '--embedding', 
+    default='tt',
+    choices=['tt', 'tr', 'full'],
+    type=str)
 parser.add_argument('--ranks', type=int, default=8)
 parser.add_argument('--d', type=int, default=3)
 parser.add_argument('--embed_dim', type=int)
@@ -22,9 +26,11 @@ parser.add_argument(
     type=str)
 args = parser.parse_args()
 
-if args.use_tt:
+if args.embedding == 'tt':
     tt = "tt"
-else:
+elif args.embedding == 'tr':
+    tt = 'tr'
+else:             
     tt = "full"
 
 model_name = f"{args.dataset}-dim_{args.embed_dim}-d_{args.d}-ranks_{args.ranks}-{tt}"
@@ -110,29 +116,41 @@ lstm_model = LSTM_Classifier(embedding_dim=EMBEDDING_DIM,
                              bidirectional=BIDIRECTIONAL,
                              dropout=DROPOUT)
 
-if args.use_tt:
+if args.embedding == 'tt':
         embed_model = t3.TTEmbedding(
             voc_size=INPUT_DIM,
             emb_size=EMBEDDING_DIM,
             auto_shapes=True,
+            auto_shape_mode='mixed',
             d=args.d,
             tt_rank=args.ranks,
             padding_idx=1
         )
         compression_rate = INPUT_DIM * EMBEDDING_DIM / embed_model.tt_matrix.dof
+elif args.embedding == 'tr':
+        embed_model = t3.TREmbedding(
+            voc_size=INPUT_DIM,
+            emb_size=EMBEDDING_DIM,
+            auto_shapes=True,
+            auto_shape_mode='mixed',
+            d=args.d,
+            tr_rank=args.ranks,
+            padding_idx=1
+        )
+        compression_rate = INPUT_DIM * EMBEDDING_DIM / embed_model.tr_matrix.dof
 else:
     embed_model = nn.Embedding(
         num_embeddings=INPUT_DIM,
         embedding_dim=EMBEDDING_DIM
     )
     compression_rate = 1.0
-    
-    
+
+
 def cross_entropy_loss(logits, target):
     labels = target.type(torch.LongTensor).to(logits.device)
     return nn.CrossEntropyLoss()(logits, labels)
-    
-    
+
+
 model = nn.Sequential(embed_model, lstm_model)
 
 
@@ -169,7 +187,7 @@ for epoch in range(N_EPOCHS):
     log['test_acc'].append(test_acc)
     log['valid_acc'].append(valid_acc)
     log['valid_loss'].append(valid_loss)
-    
+
     if best_result["valid_acc"] < valid_acc:
         best_result["epoch"] = epoch
         best_result["train_acc"] = train_acc

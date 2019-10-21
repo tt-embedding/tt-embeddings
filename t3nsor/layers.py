@@ -10,31 +10,39 @@ class TTEmbedding(nn.Module):
                  shape=None,
                  voc_size=None,
                  emb_size=None,
-                 auto_shapes=True,
+                 auto_shapes=None,
+                 auto_shape_mode='ascending',
+                 auto_shape_criterion='entropy',
                  d=3,
                  tt_rank=8,
-                 stddev=None,
                  batch_dim_last=None,
-                 padding_idx=None):
+                 padding_idx=None,
+                 naive=False):
 
         super(TTEmbedding, self).__init__()
 
         if auto_shapes:
-            voc_quantization = t3.utils.suggest_tt(voc_size, d=d)
-            emb_quantization = t3.utils.get_tt_shape(emb_size, d=d)
+            voc_quantization = t3.utils.suggest_shape(
+                voc_size, d=d, criterion=auto_shape_criterion, mode=auto_shape_mode)
+            emb_quantization = t3.utils.auto_shape(
+                emb_size, d=d, criterion=auto_shape_criterion, mode=auto_shape_mode)
 
             shape = [voc_quantization, emb_quantization]
+            self.shape = shape
+
+        else:
+            self.shape = shape
 
         if init is None:
             if shape is None:
-                raise ValueError("if init is not provided, please specify shape")
+                raise ValueError('if init is not provided,'
+                                 ' please specify shape')
         else:
-            shape = init.raw_shape
+            self.shape = init.raw_shape
 
-        self.shape = shape
 
         if init is None:
-            init = t3.glorot_initializer(shape, tt_rank=tt_rank)
+            init = t3.glorot_initializer(self.shape, tt_rank=tt_rank)
 
         self.tt_matrix = init.to_parameter()
         self.parameters = self.tt_matrix.parameter
@@ -50,6 +58,7 @@ class TTEmbedding(nn.Module):
         self.emb_quant = self.shape[1]
 
         self.padding_idx = padding_idx
+        self.naive = naive
 
     def forward(self, x):
 
@@ -59,9 +68,91 @@ class TTEmbedding(nn.Module):
 
         # x_ind = t3.ind2sub(self.voc_quant, x)
         # rows = t3.gather_rows(self.tt_matrix, x_ind)
+        #
         # rows = rows.view(x.shape[0], -1)
-        # we use this approach due to a memory leak in PyTorch
-        full = self.tt_matrix.full()
+        if self.naive:
+            full = t3.naive_full(self.tt_matrix)
+        else:
+            full = self.tt_matrix.full()
+        rows = full[x]
+
+        if self.padding_idx is not None:
+            rows = torch.where(x.view(-1, 1) != self.padding_idx, rows, torch.zeros_like(rows))
+
+        rows = rows.view(*xshape_new)
+
+        return rows.to(x.device)
+
+class TREmbedding(nn.Module):
+    def __init__(self,
+                 init=None,
+                 shape=None,
+                 voc_size=None,
+                 emb_size=None,
+                 auto_shapes=None,
+                 auto_shape_mode='ascending',
+                 auto_shape_criterion='entropy',
+                 d=3,
+                 tt_rank=8,
+                 batch_dim_last=None,
+                 padding_idx=None,
+                 naive=False):
+
+        super(TREmbedding, self).__init__()
+
+        if auto_shapes:
+            voc_quantization = t3.utils.suggest_shape(
+                voc_size, d=d, criterion=auto_shape_criterion, mode=auto_shape_mode)
+            emb_quantization = t3.utils.auto_shape(
+                emb_size, d=d, criterion=auto_shape_criterion, mode=auto_shape_mode)
+
+            shape = [voc_quantization, emb_quantization]
+            self.shape = shape
+
+        else:
+            self.shape = shape
+
+        if init is None:
+            if shape is None:
+                raise ValueError('if init is not provided,'
+                                 ' please specify shape')
+        else:
+            self.shape = init.raw_shape
+
+
+        if init is None:
+            init = t3.glorot_initializer_tr(self.shape, tr_rank=tt_rank)
+
+        self.tr_matrix = init.to_parameter()
+        self.parameters = self.tr_matrix.parameter
+
+        # for p in self.parameters():
+        #    p.name = 'tt_core'
+
+        self.batch_dim_last = batch_dim_last
+        self.voc_size = int(np.prod(self.shape[0]))
+        self.emb_size = int(np.prod(self.shape[1]))
+
+        self.voc_quant = self.shape[0]
+        self.emb_quant = self.shape[1]
+
+        self.padding_idx = padding_idx
+        self.naive = naive
+
+    def forward(self, x):
+
+        xshape = list(x.shape)
+        xshape_new = xshape + [self.emb_size, ]
+        x = x.view(-1)
+
+        # x_ind = t3.ind2sub(self.voc_quant, x)
+        # rows = t3.gather_rows(self.tr_matrix, x_ind)
+        #
+        # rows = rows.view(x.shape[0], -1)
+        if self.naive:
+            full = t3.naive_full(self.tr_matrix)
+        else:
+            full = self.tr_matrix.full()
         rows = full[x]
 
         if self.padding_idx is not None:
@@ -74,7 +165,8 @@ class TTEmbedding(nn.Module):
 
 class TTLinear(nn.Module):
     def __init__(self, in_features=None, out_features=None, bias=True, init=None, shape=None,
-                 auto_shapes=True, d=3, tt_rank=8, stddev=None
+                 auto_shapes=True, d=3, tt_rank=8, auto_shape_mode='ascending',
+                 auto_shape_criterion='entropy', naive=False
                  ):
         super(TTLinear, self).__init__()
 
@@ -82,8 +174,10 @@ class TTLinear(nn.Module):
             if in_features is None or out_features is None:
                 raise ValueError("Shape is not specified")
 
-            in_quantization = t3.utils.get_tt_shape(in_features, d=d)
-            out_quantization = t3.utils.get_tt_shape(out_features, d=d)
+            in_quantization = t3.utils.auto_shape(
+                in_features, d=d, criterion=auto_shape_criterion, mode=auto_shape_mode)
+            out_quantization = t3.utils.auto_shape(
+                out_features, d=d, criterion=auto_shape_criterion, mode=auto_shape_mode)
 
             shape = [in_quantization, out_quantization]
 
@@ -100,18 +194,66 @@ class TTLinear(nn.Module):
         self.shape = shape
         self.weight = init.to_parameter()
         self.parameters = self.weight.parameter
-        self.weight_t = t3.transpose(self.weight)
-
+        if naive:
+            self.mm_op = t3.naive_dense_tt_matmul
+        else:
+            self.mm_op = t3.dense_tt_matmul
         if bias:
-            self.bias = torch.nn.Parameter(1e-2 * torch.ones(out_features))
+            self.bias = torch.nn.Parameter(1e-3 * torch.ones(out_features))
         else:
             self.register_parameter('bias', None)
 
     def forward(self, x):
-        weight_t = self.weight_t
-        x_t = x.transpose(0, 1)
-
+        weight = self.weight
         if self.bias is None:
-            return t3.tt_dense_matmul(weight_t, x_t).transpose(0, 1)
+            return self.mm_op(x, weight)
         else:
-            return t3.tt_dense_matmul(weight_t, x_t).transpose(0, 1) + self.bias
+            return self.mm_op(x, weight) + self.bias
+
+
+class TRLinear(nn.Module):
+    def __init__(self, in_features=None, out_features=None, bias=True, init=None, shape=None,
+                 auto_shapes=True, d=3, tt_rank=8, auto_shape_mode='ascending',
+                 auto_shape_criterion='entropy', naive=False
+                 ):
+        super(TRLinear, self).__init__()
+
+        if auto_shapes:
+            if in_features is None or out_features is None:
+                raise ValueError("Shape is not specified")
+
+            in_quantization = t3.utils.auto_shape(
+                in_features, d=d, criterion=auto_shape_criterion, mode=auto_shape_mode)
+            out_quantization = t3.utils.auto_shape(
+                out_features, d=d, criterion=auto_shape_criterion, mode=auto_shape_mode)
+
+            shape = [in_quantization, out_quantization]
+
+        if init is None:
+            if shape is None:
+                raise ValueError(
+                    "if init is not provided, please specify shape, or set auto_shapes=True")
+        else:
+            shape = init.raw_shape
+
+        if init is None:
+            init = t3.glorot_initializer_tr(shape, tr_rank=tt_rank)
+
+        self.shape = shape
+        self.weight = init.to_parameter()
+        self.parameters = self.weight.parameter
+        if naive:
+            self.mm_op = t3.naive_dense_tr_matmul
+        else:
+            raise ValueError('Not implemented, use naive option.')
+        if bias:
+            self.bias = torch.nn.Parameter(1e-3 * torch.ones(out_features))
+        else:
+            self.register_parameter('bias', None)
+
+    def forward(self, x):
+        weight = self.weight
+        if self.bias is None:
+            return self.mm_op(x, weight)
+        else:
+            return self.mm_op(x, weight) + self.bias
